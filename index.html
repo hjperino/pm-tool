@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KI-Team Projektmanagement</title>
+  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- BABEL STANDALONE! (This is the missing part) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- jsPDF für PDF-Export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- jsPDF AutoTable für Tabellen-Export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
+  <link rel="icon" href="https://perino.info/images/DLH-Logo.png">
+  <style>
+    .shadow-card { box-shadow: 0 6px 28px 0 rgba(20,40,120,0.08), 0 1.5px 5px 0 rgba(0,0,0,0.06);}
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem;}
+    .calendar-day { min-height: 88px; border: 1px solid #e5e7eb; background: #f8fafc; border-radius: 0.5rem; padding: 0.25rem 0.5rem; position: relative;}
+    .calendar-day-today { border: 2px solid #2563eb !important; background: #e0e7ff;}
+    .calendar-task-badge { display: block; font-size: 13px; margin-bottom: 2px; border-radius: 0.375rem; padding: 2px 7px; cursor: pointer; font-weight: 500; }
+    .calendar-scroll { overflow-x:auto; }
+    .calendar-month { min-width: 340px; margin-right: 2rem;}
+    .min-h-18 { min-height: 18px;}
+    .calendar-mini { min-width: 230px; }
+    .calendar-mini .calendar-day { min-height: 26px; padding: 1px 3px;}
+    .calendar-mini .calendar-day-today { border-width: 1.5px !important;}
+    .calendar-mini .calendar-task-badge { font-size: 10px; padding: 1px 5px;}
+  </style>
+</head>
+<body class="bg-slate-100">
+<div id="root"></div>
+<script type="text/babel">
+  
+ 
+    // ========== EMOJIS ==========
+    const Emoji = {
+      calendar: "📅",
+      plus: "➕",
+      edit: "✏️",
+      trash: "🗑️",
+      archive: "📦",
+      eye: "👁️",
+      down: "▼",
+      users: "👥",
+      user: "👤"
+    };
+
+// ========== SETTINGS =============
+// Statt jsonbin direkt: Backend-Endpunkte
+const BACKEND_BASE = "https://DEIN-BACKEND.onrender.com"; // Render URL
+const LOAD_URL = `${BACKEND_BASE}/api/data`;
+const SAVE_URL = `${BACKEND_BASE}/api/data`;
+const AUTH_URL = `${BACKEND_BASE}/api/auth`;    
+    // ========== VERSION ==========
+const APP_VERSION = "V2";
+const APP_DATE = "06-09-25";
+
+    // ========== TEAMS/USERS/STATUS ==============
+    const teams = {
+      'KI-Team (alle)': ['Christof Glaus', 'Pascal Schmidt', 'Juerg Widrig', 'Hansjuerg Perino', 'Christian Roduner', 'Natalie Streiff'],
+      'AG-1': ['Christof Glaus', 'Pascal Schmidt', 'Juerg Widrig', 'Hansjuerg Perino'],
+      'AG-2': ['Pascal Schmidt', 'Juerg Widrig', 'Hansjuerg Perino', 'Christian Roduner', 'Natalie Streiff'],
+      'AG-3': ['Christof Glaus', 'Pascal Schmidt', 'Juerg Widrig', 'Hansjuerg Perino'],
+      'AG-4': ['Christian Roduner', 'Natalie Streiff', 'Christof Glaus']
+    };
+const allMembers = [...new Set(Object.values(teams).flat())];
+    const statuses = ['zu tun', 'in Arbeit', 'erledigt', 'archiviert'];
+
+// Prüft einmal pro Browser-Session (sessionStorage)
+function ensureEditor() {
+  if (sessionStorage.getItem("isEditor") === "1") return true;
+  const pw = window.prompt("Passwort für Änderungen eingeben:");
+  if (pw && pw === EDIT_PASSWORD) {
+    sessionStorage.setItem("isEditor", "1");
+    return true;
+  }
+  alert("Falsches Passwort. Änderungen sind nicht erlaubt.");
+  return false;
+}
+    const statusBadge = status =>
+      status === "zu tun" ? "calendar-task-badge bg-red-200 text-red-900" :
+      status === "in Arbeit" ? "calendar-task-badge bg-yellow-100 text-yellow-800" :
+      status === "erledigt" ? "calendar-task-badge bg-green-100 text-green-900" :
+      "calendar-task-badge bg-gray-100 text-gray-700";
+
+    const monthNames = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni','Juli','August','September','Oktober','November','Dezember'];
+    const weekDays = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+   function ProjectManagementTool() {
+function makeLinksClickable(text) {
+  if (!text) return null;
+
+  // 1. Erkenne Markdown-Links: [Text](URL)
+  const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  let parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = markdownLinkRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    parts.push(
+      <a
+        key={match.index}
+        href={match[2]}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-700 underline break-all"
+      >
+        {match[1]}
+      </a>
+    );
+    lastIndex = markdownLinkRegex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  // 2. Plaintext-URLs + Zeilenumbrüche im Rest-Text ersetzen
+  return parts.flatMap((part, i) => {
+    if (typeof part === "string") {
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const subparts = [];
+      let last = 0, m;
+
+      while ((m = urlRegex.exec(part)) !== null) {
+        if (m.index > last) {
+          subparts.push(...renderWithLineBreaks(part.substring(last, m.index), `${i}-txt-${last}`));
+        }
+        subparts.push(
+          <a
+            key={i + "-url-" + m.index}
+            href={m[1]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-700 underline break-all"
+          >
+            {m[1]}
+          </a>
+        );
+        last = urlRegex.lastIndex;
+      }
+
+      if (last < part.length) {
+        subparts.push(...renderWithLineBreaks(part.substring(last), `${i}-txt-end`));
+      }
+      return subparts;
+    }
+    return part;
+  });
+}
+function highlightSitzung(title) {
+  if (title == null) return null;
+  // robust: immer als String behandeln
+  const text = String(title);
+  const parts = text.split(/(Sitzung)/gi);
+  return parts.map((part, idx) =>
+    part.toLowerCase() === "sitzung"
+      ? (
+        <mark
+          key={idx}
+          style={{ background: "#fde047", color: "#a16207", padding: "0 2px" }}
+        >
+          {part}
+        </mark>
+      )
+      : part
+  );
+}
+// Hilfsfunktion für Zeilenumbrüche
+function renderWithLineBreaks(text, keyPrefix) {
+  return text.split("\n").map((line, j) => (
+    <React.Fragment key={`${keyPrefix}-${j}`}>
+      {line}
+      {j < text.split("\n").length - 1 && <br />}
+    </React.Fragment>
+  ));
+}
+  // Alle States
+  const [showTeamsDropdown, setShowTeamsDropdown] = React.useState(false);
+const [showMembersDropdown, setShowMembersDropdown] = React.useState(false);
+
+// --- HIER: STATES für Export-Modal ---
+const [showExportModal, setShowExportModal] = React.useState(false);
+const [exportMembers, setExportMembers] = React.useState([]);      // leeres Array = alle
+const [exportDateFrom, setExportDateFrom] = React.useState('');    // yyyy-mm-dd; leer = alle
+const [exportTeam, setExportTeam] = React.useState('ALL');         // 'ALL' oder Teamname
+const [exportKinds, setExportKinds] = React.useState({             // Filter nach Typ
+  sitzungen: true,
+  dokumente: true,
+  other: true
+});
+
+React.useEffect(() => {
+  function handleClick(event) {
+    if (!event.target.closest('#teams-dropdown')) {
+      setShowTeamsDropdown(false);
+    }
+  }
+  if (showTeamsDropdown) {
+    document.addEventListener('mousedown', handleClick);
+  }
+  return () => document.removeEventListener('mousedown', handleClick);
+}, [showTeamsDropdown]);
+
+React.useEffect(() => {
+  function handleClick(event) {
+    if (!event.target.closest('#members-dropdown')) {
+      setShowMembersDropdown(false);
+    }
+  }
+  if (showMembersDropdown) {
+    document.addEventListener('mousedown', handleClick);
+  }
+  return () => document.removeEventListener('mousedown', handleClick);
+}, [showMembersDropdown]);
+
+  const [tasks, setTasks] = React.useState([]);
+  const [log, setLog] = React.useState([]);
+  const [currentView, setCurrentView] = React.useState('main');
+  const [selectedTeam, setSelectedTeam] = React.useState('');
+  const [selectedMember, setSelectedMember] = React.useState('');
+  const [showTaskForm, setShowTaskForm] = React.useState(false);
+  const [editingTask, setEditingTask] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [lastSync, setLastSync] = React.useState(null);
+  // --- Log-Highlight-Filter ---
+const [logSince, setLogSince] = React.useState(localStorage.getItem('logSince') || '');
+const [showOnlyNew, setShowOnlyNew] = React.useState(false);
+
+// persistieren
+React.useEffect(() => {
+  if (logSince) localStorage.setItem('logSince', logSince);
+  else localStorage.removeItem('logSince');
+}, [logSince]);
+
+// Helper: ist Eintrag seit dem gesetzten Datum "neu"?
+const isNewLogEntry = React.useCallback((entry) => {
+  if (!logSince) return false;
+  // entry.timestamp ist ISO (z.B. 2025-08-19T12:34:56.789Z)
+  const entryTime = new Date(entry.timestamp).getTime();
+  const sinceTime = new Date(`${logSince}T00:00:00Z`).getTime();
+  return entryTime >= sinceTime;
+}, [logSince]);
+// Helper-Funktionen
+  const addLogEntry = React.useCallback((type, task, oldTask = null) => {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      type,
+      taskId: task.id,
+      title: task.title,
+      team: task.team,
+      assignedTo: (task.assignedTo || []).join(', '),
+      user: "Hans (Demo)",
+      details: (() => {
+        if (type === "edited" && oldTask) {
+          const changes = [];
+          if (oldTask.status !== task.status) changes.push(`Status: ${oldTask.status} → ${task.status}`);
+          if (oldTask.deadline !== task.deadline) changes.push(`Deadline: ${oldTask.deadline} → ${task.deadline}`);
+          if (oldTask.description !== task.description) changes.push("Beschreibung geändert");
+          return changes.join('; ');
+        }
+        if (type === "status" && oldTask) {
+          return `Status: ${oldTask.status} → ${task.status}`;
+        }
+        return "";
+      })()
+    };
+    setLog(prev => [...prev, entry]);
+  }, [setLog]);
+
+
+  // Kalender
+  const [showCalendar, setShowCalendar] = React.useState(false);
+  const [calendarView, setCalendarView] = React.useState('month');
+  const [currentMonth, setCurrentMonth] = React.useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = React.useState(new Date().getFullYear());
+  const [currentWeek, setCurrentWeek] = React.useState(new Date());
+
+// Cloud-Load (nur EINMAL, beim Laden)
+React.useEffect(() => {
+  setLoading(true);
+  fetch(API_URL, {
+    headers: { 'X-Master-Key': API_KEY }
+  })
+    .then(res => res.ok ? res.json() : Promise.reject('Fehler beim Laden'))
+    .then(data => {
+      if (data.record && data.record.tasks && data.record.log) {
+        setTasks(Array.isArray(data.record.tasks) ? data.record.tasks : []);
+        setLog(Array.isArray(data.record.log) ? data.record.log : []);
+      } else if (data.record && Array.isArray(data.record)) {
+        setTasks(data.record);
+        setLog([]);
+      } else {
+        setTasks([]);
+        setLog([]);
+      }
+      setLoading(false);
+      setLastSync(new Date());
+    })
+    .catch(err => {
+      setLoading(false);
+    });
+}, []);
+
+// Cloud-Save (immer wenn sich die Tasks ändern)
+const isFirstRun = React.useRef(true);
+React.useEffect(() => {
+  if (isFirstRun.current) {
+    isFirstRun.current = false;
+    return;
+  }
+  if (!loading) {
+    fetch(API_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': API_KEY
+      },
+      body: JSON.stringify({ tasks, log })
+    })
+    .then(res => {
+      if (res.ok) setLastSync(new Date());
+    });
+  }
+}, [tasks]);
+  // Helper für Teams/Members/Tasks
+  const getMemberTeams = (member) => Object.keys(teams).filter(team => teams[team].includes(member));
+  const getMemberOpenTasks = (member) => tasks.filter(task => task.assignedTo.includes(member) && task.status !== "archiviert");
+const memberToEmail = {
+  "Christof Glaus": "christof.glaus@dlh.zh.ch",
+  "Pascal Schmidt": "pascal.schmidt@dlh.zh.ch",
+  "Juerg Widrig": "juerg.widrig@dlh.zh.ch",
+  "Hansjuerg Perino": "hansjuerg.perino@dlh.zh.ch",
+  "Christian Roduner": "christian.roduner@dlh.zh.ch",
+  "Natalie Streiff": "natalie.streiff@dlh.zh.ch"
+};
+const isActiveTask = (task) => task.status !== "archiviert";
+
+
+
+  // Task-Form State + Handler
+  const [taskForm, setTaskForm] = React.useState({
+    title: '', description: '', comment: '', team: '', assignedTo: [], deadline: '', status: 'zu tun'
+  });
+  const handleTaskClick = (task) => {
+  if (!ensureEditor()) return;
+  setEditingTask(task);
+  setTaskForm(task);
+  setShowTaskForm(true);
+};
+const handleEditTask = (task) => {
+  if (!ensureEditor()) return;
+  setEditingTask(task);
+  setTaskForm(task);
+  setShowTaskForm(true);
+};
+  const handleDeleteTask = (id) => {
+  if (!ensureEditor()) return;
+  setTasks(tasks.filter(t => t.id !== id));
+  setShowTaskForm(false);
+  const deletedTask = tasks.find(t => t.id === id);
+  if (deletedTask) addLogEntry("deleted", deletedTask);
+};
+  const resetTaskForm = () => { setTaskForm({title: '', description: '', comment: '', team: '', assignedTo: [], deadline: '', status: 'zu tun'}); setEditingTask(null); setShowTaskForm(false);}
+ const handleTaskSubmit = () => {
+  if (sessionStorage.getItem("isEditor") !== "1") {
+    alert("Bitte Passwort eingeben, um Änderungen zu speichern.");
+    return;
+  }
+    if (editingTask) {
+      setTasks(tasks.map(t => t.id === editingTask.id ? {...taskForm, id: editingTask.id} : t));
+      const oldTask = tasks.find(t => t.id === editingTask.id);
+addLogEntry("edited", taskForm, oldTask);
+    } else {
+      setTasks([...tasks, {...taskForm, id: Date.now()}]);
+      addLogEntry("created", { ...taskForm, id: Date.now() });
+    }
+    resetTaskForm();
+  };
+  const handleAssigneeChange = (member, checked) => {
+    setTaskForm({
+      ...taskForm,
+      assignedTo: checked
+        ? [...taskForm.assignedTo, member]
+        : taskForm.assignedTo.filter(m => m !== member)
+    });
+  };
+
+  // ---- Monatsgrid für Kalender
+  function getCalendarDays(year, month) {
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month+1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDate = firstDay.getDay();
+    const calendarDays = [];
+    for (let i = 0; i < startDate; i++) calendarDays.push(null);
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${String(month+1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      calendarDays.push({ day, dateStr, tasks: 
+      tasks.filter(task => task.deadline === dateStr && task.status !== "archiviert" &&
+       (currentView !== 'team' || task.team === selectedTeam) && (currentView !== 'member' || task.assignedTo.includes(selectedMember))) });
+    }
+    while (calendarDays.length % 7 !== 0) calendarDays.push(null);
+    return calendarDays;
+  }
+  
+    // ========== Kalender Monats-, Wochen-, Jahresansicht ===========
+  function renderMonthCalendar() {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const days = getCalendarDays(currentYear, currentMonth);
+    return (
+      <div className="bg-white rounded-xl shadow-card p-6 mt-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex gap-2">
+            <button className="p-2 text-xl hover:bg-slate-200 rounded-full" onClick={() => {
+              setCurrentMonth(m => (m === 0 ? 11 : m - 1));
+              if (currentMonth === 0) setCurrentYear(y => y - 1);
+            }}>←</button>
+            <div className="font-bold text-2xl px-2">{monthNames[currentMonth]} {currentYear}</div>
+            <button className="p-2 text-xl hover:bg-slate-200 rounded-full" onClick={() => {
+              setCurrentMonth(m => (m === 11 ? 0 : m + 1));
+              if (currentMonth === 11) setCurrentYear(y => y + 1);
+            }}>→</button>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setCalendarView('week')} className={`px-2 py-1 rounded ${calendarView==='week'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Woche</button>
+            <button onClick={() => setCalendarView('month')} className={`px-2 py-1 rounded ${calendarView==='month'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Monat</button>
+            <button onClick={() => setCalendarView('year')} className={`px-2 py-1 rounded ${calendarView==='year'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Jahr</button>
+          </div>
+        </div>
+        <div className="calendar-scroll">
+          <div className="calendar-grid mb-2">
+            {weekDays.map(day => (
+              <div key={day} className="text-center font-semibold py-2 text-slate-500 text-base">{day}</div>
+            ))}
+            {days.map((day, idx) => (
+              <div key={idx}
+                   className={`calendar-day transition-all ${day && day.dateStr === todayStr ? "calendar-day-today": ""} ${day && day.tasks.length ? 'border-blue-200 bg-blue-50' : ''}`}>
+                <div className="text-xs font-semibold text-slate-400 absolute top-1 left-2">{day ? day.day : ''}</div>
+                <div className="mt-5">
+                  {day && day.tasks.map(task => (
+                    <span key={task.id}
+                          className={statusBadge(task.status)}
+                          title={task.title}
+                          onClick={() => handleTaskClick(task)}>
+  {highlightSitzung(task.title.length > 18 ? task.title.slice(0,18)+'…' : task.title)}
+</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderWeekCalendar() {
+    // Woche (So–Sa)
+    let start = new Date(currentWeek);
+    start.setDate(start.getDate() - start.getDay());
+    let end = new Date(start); end.setDate(start.getDate()+6);
+
+    const days = [];
+    for (let d=0; d<7; ++d) {
+      let day = new Date(start); day.setDate(start.getDate()+d);
+      let y = day.getFullYear(), m = day.getMonth(), dd = day.getDate();
+      let dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+      days.push({ day, dateStr, tasks: tasks.filter(task => task.deadline === dateStr && task.status !== "archiviert" &&
+      (currentView!=='team'||task.team===selectedTeam) && (currentView!=='member'||task.assignedTo.includes(selectedMember))) });
+    }
+
+    return (
+      <div className="bg-white rounded-xl shadow-card p-6 mt-6">
+        <div className="flex items-center justify-between mb-4">
+          <button className="p-2 text-xl hover:bg-slate-200 rounded-full" onClick={() => setCurrentWeek(w => { let d = new Date(w); d.setDate(d.getDate()-7); return d; })}>←</button>
+          <h2 className="font-bold text-2xl">
+            Woche: {days[0].day.toLocaleDateString('de-CH')} – {days[6].day.toLocaleDateString('de-CH')}
+          </h2>
+          <button className="p-2 text-xl hover:bg-slate-200 rounded-full" onClick={() => setCurrentWeek(w => { let d = new Date(w); d.setDate(d.getDate()+7); return d; })}>→</button>
+          <div className="flex gap-2">
+            <button onClick={() => setCalendarView('week')} className={`px-2 py-1 rounded ${calendarView==='week'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Woche</button>
+            <button onClick={() => setCalendarView('month')} className={`px-2 py-1 rounded ${calendarView==='month'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Monat</button>
+            <button onClick={() => setCalendarView('year')} className={`px-2 py-1 rounded ${calendarView==='year'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Jahr</button>
+          </div>
+        </div>
+        <div className="calendar-scroll">
+          <div className="calendar-grid mb-2">
+            {days.map((info, i) => (
+              <div key={i} className={`calendar-day ${info.dateStr === new Date().toISOString().split('T')[0] ? "calendar-day-today" : ""}`}>
+                <div className="font-medium text-slate-400 h-5 text-xs">{weekDays[i]}<br/>{info.day.getDate()}.{info.day.getMonth()+1}</div>
+                <div>
+                  {info.tasks.map(task => (
+                    <span key={task.id} className={statusBadge(task.status)} onClick={() => handleTaskClick(task)}>
+  {highlightSitzung(task.title.length > 18 ? task.title.slice(0,18)+'…' : task.title)}
+</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderYearCalendar() {
+    return (
+      <div className="bg-white rounded-xl shadow-card p-6 mt-6">
+        <div className="flex items-center justify-between mb-4">
+          <button className="p-2 text-xl hover:bg-slate-200 rounded-full" onClick={() => setCurrentYear(y => y-1)}>←</button>
+          <h2 className="font-bold text-2xl">{currentYear}</h2>
+          <button className="p-2 text-xl hover:bg-slate-200 rounded-full" onClick={() => setCurrentYear(y => y+1)}>→</button>
+          <div className="flex gap-2">
+            <button onClick={() => setCalendarView('week')} className={`px-2 py-1 rounded ${calendarView==='week'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Woche</button>
+            <button onClick={() => setCalendarView('month')} className={`px-2 py-1 rounded ${calendarView==='month'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Monat</button>
+            <button onClick={() => setCalendarView('year')} className={`px-2 py-1 rounded ${calendarView==='year'?'bg-blue-600 text-white':'bg-slate-200 text-slate-800'}`}>Jahr</button>
+          </div>
+        </div>
+        <div className="calendar-scroll">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {Array.from({length:12}).map((_,m) => {
+              const days = getCalendarDays(currentYear, m);
+              return (
+                <div key={m} className="calendar-mini bg-gray-50 rounded-lg p-2 shadow">
+                  <div className="text-center font-semibold text-blue-700 mb-1">{monthNames[m]}</div>
+                  <div className="calendar-grid">
+                    {weekDays.map(day => (
+                      <div key={day} className="text-center text-xs text-gray-400 font-medium">{day}</div>
+                    ))}
+                    {days.map((day, idx) => (
+                      <div key={idx} className={`calendar-day min-h-18 px-0.5 pt-0.5 ${day && day.dateStr === new Date().toISOString().split('T')[0] ? "calendar-day-today": ""}`}>
+                        <div className="text-xs text-gray-400">{day?day.day:''}</div>
+                        {day && day.tasks.map(task =>
+                          <span key={task.id} className={statusBadge(task.status)} style={{fontSize:'0.77em'}}
+                            onClick={() => handleTaskClick(task)}>
+  {highlightSitzung(task.title.length > 18 ? task.title.slice(0,18)+'…' : task.title)}
+</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+// Export Log als PDF (landscape, AutoTable, schmale Aktion/Team/Task, Wrap bei Mitglieder/Details)
+function handleExportPDF() {
+  if (!ensureEditor()) return; // gleiches Passwort wie beim Task-Dialog
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+
+  const margin = 40;
+  const pageWidth  = doc.internal.pageSize.getWidth();
+  const contentWidth = pageWidth - margin * 2;
+
+  // Titel + Meta
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Änderungs-Log", margin, margin);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Erstellt: ${new Date().toLocaleString('de-CH')}`, margin, margin + 18);
+
+  // Daten
+  const rows = [...log].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const body = rows.map((entry) => ([
+    new Date(entry.timestamp).toLocaleString('de-CH') || "",
+    String(entry.type ?? ""),
+    String(entry.title ?? ""),
+    String(entry.team ?? ""),
+    String(entry.assignedTo ?? ""),
+    String(entry.details ?? "")
+  ]));
+
+  // AutoTable
+  doc.autoTable({
+    head: [["Zeit", "Aktion", "Task", "Team", "Mitglieder", "Details"]],
+    body,
+    startY: margin + 36,
+    tableWidth: contentWidth,
+    margin: { left: margin, right: margin },
+    styles: {
+      font: "helvetica",
+      fontSize: 9,
+      cellPadding: 4,
+      overflow: "linebreak",  // Text umbrechen
+      valign: "top"
+    },
+    headStyles: {
+      fillColor: [240, 248, 255],
+      textColor: 20,
+      halign: "left"
+    },
+    // Schmal: Aktion/Team/Task; Mitglieder fix + Wrap; Details füllt den Rest (Wrap)
+    columnStyles: {
+      0: { cellWidth: 100 },   // Zeit
+      1: { cellWidth: 55 },    // Aktion (schmaler)
+      2: { cellWidth: 115 },   // Task  (schmaler)
+      3: { cellWidth: 80 },    // Team  (schmaler)
+      4: { cellWidth: 130 },   // Mitglieder (fix, mit Umbruch)
+      5: { cellWidth: 'wrap' } // Details (Restbreite, mit Umbruch)
+    },
+    didDrawPage: () => {
+      const page = doc.internal.getNumberOfPages();
+      doc.setFontSize(8);
+      doc.text(
+        `Seite ${page}`,
+        pageWidth - margin,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: "right" }
+      );
+    }
+  });
+
+  const dateForName = new Date().toISOString().slice(0, 10);
+  doc.save(`KI-Team-Log-${dateForName}.pdf`);
+}
+function renderDokumente() {
+  // Dokumente = Beschreibung oder Kommentar enthält Link; keine archivierten; nach Datum absteigend
+  const hasLink = (str) =>
+    typeof str === 'string' &&
+    (/(https?:\/\/[^\s)]+)/i.test(str) || /\[[^\]]+\]\(https?:\/\/[^\s)]+\)/i.test(str));
+
+  const documents = tasks
+    .filter(t =>
+      t.status !== "archiviert" &&
+      (hasLink(t.description) || hasLink(t.comment))
+    )
+    .sort((a, b) => String(b.deadline ?? "").localeCompare(String(a.deadline ?? "")));
+
+  return (
+    <div className="max-w-3xl mx-auto mt-8">
+      <div className="bg-white rounded-2xl shadow-card p-8 mb-6">
+        <h2 className="text-blue-800 font-bold text-2xl text-center mb-4">📄 Dokumente</h2>
+        <table className="w-full table-auto text-sm">
+          <thead>
+            <tr className="bg-blue-50 text-blue-800">
+              <th className="px-3 py-2 text-left">Titel</th>
+              <th className="px-3 py-2 text-left">Deadline</th>
+              <th className="px-3 py-2 text-left">Team</th>
+              <th className="px-3 py-2 text-left">Mitglieder</th>
+              <th className="px-3 py-2 text-left">Beschreibung</th>
+            </tr>
+          </thead>
+          <tbody>
+            {documents.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="text-center py-8 text-gray-400">
+                  Keine Dokument-Tasks vorhanden.
+                </td>
+              </tr>
+            ) : documents.map(task => (
+              <tr key={task.id} className="border-b">
+                <td className="px-3 py-2 font-medium">
+                  <button
+                    className="text-blue-700 hover:underline"
+                    onClick={() => handleTaskClick(task)}
+                    style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer" }}
+                  >
+                    {highlightSitzung(task.title)}
+                  </button>
+                </td>
+                <td className="px-3 py-2">{task.deadline}</td>
+                <td className="px-3 py-2">{task.team}</td>
+                <td className="px-3 py-2">{(task.assignedTo || []).join(', ')}</td>
+                <td className="px-3 py-2">
+                  {task.description ? makeLinksClickable(task.description) : ""}
+                  {task.comment ? (
+                    <div className="text-xs text-gray-600 mt-1">{makeLinksClickable(task.comment)}</div>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+  // =================== MainContent (Cards etc.) =====================
+  function renderMainContent() {
+if (currentView === 'log') {
+  const sortedLog = [...log].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const visibleLog = showOnlyNew ? sortedLog.filter(isNewLogEntry) : sortedLog;
+
+  return (
+    <div className="max-w-3xl mx-auto mt-8">
+      <div className="bg-white rounded-2xl shadow-card p-8 mb-6">
+        <h2 className="text-blue-800 font-bold text-2xl text-center mb-4">📝 Änderungs-Log</h2>
+
+        {/* Steuerleiste */}
+        <div className="flex flex-wrap items-end gap-3 mb-4">
+          <div>
+            <label className="block text-sm text-slate-600 mb-1">Ab Datum hervorheben</label>
+            <input
+              type="date"
+              value={logSince}
+              onChange={e => setLogSince(e.target.value)}
+              className="border rounded px-2 py-1"
+            />
+          </div>
+          <div className="flex items-center gap-2 mb-1">
+            <input
+              id="onlyNew"
+              type="checkbox"
+              checked={showOnlyNew}
+              onChange={e => setShowOnlyNew(e.target.checked)}
+            />
+            <label htmlFor="onlyNew" className="text-sm text-slate-700">Nur neue Einträge anzeigen</label>
+          </div>
+          {logSince && (
+            <div className="text-xs text-slate-500">
+              <span className="inline-block align-middle w-3 h-3 bg-yellow-100 border border-yellow-300 rounded mr-1"></span>
+              Einträge seit {new Date(`${logSince}T00:00:00Z`).toLocaleDateString('de-CH')} werden markiert
+            </div>
+          )}
+          {logSince && (
+            <button
+              onClick={() => { setLogSince(''); setShowOnlyNew(false); }}
+              className="ml-auto text-xs text-blue-700 underline"
+            >
+              Filter zurücksetzen
+            </button>
+          )}
+        </div>
+
+        <table className="w-full table-auto text-sm">
+          <thead>
+            <tr className="bg-blue-50 text-blue-800">
+              <th className="px-3 py-2 text-left">Zeit</th>
+              <th className="px-3 py-2 text-left">Aktion</th>
+              <th className="px-3 py-2 text-left">Task</th>
+              <th className="px-3 py-2 text-left">Team</th>
+              <th className="px-3 py-2 text-left">Mitglieder</th>
+              <th className="px-3 py-2 text-left">Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleLog.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="text-center py-8 text-gray-400">
+                  Keine Einträge für den aktuellen Filter.
+                </td>
+              </tr>
+            ) : visibleLog.map((entry, idx) => {
+              const highlight = isNewLogEntry(entry);
+              return (
+                <tr
+                  key={idx}
+                  className={
+                    "border-b " +
+                    (highlight ? "bg-yellow-50" : "")
+                  }
+                  style={highlight ? { boxShadow: "inset 3px 0 0 0 #facc15" } : undefined}
+                >
+                  <td className="px-3 py-2">{new Date(entry.timestamp).toLocaleString('de-CH')}</td>
+                  <td className="px-3 py-2">{entry.type}</td>
+                  <td className="px-3 py-2">{entry.title}</td>
+                  <td className="px-3 py-2">{entry.team}</td>
+                  <td className="px-3 py-2">{entry.assignedTo}</td>
+                  <td className="px-3 py-2">{entry.details}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+    if(currentView==='main') {
+      return (
+        <div className="max-w-5xl mx-auto mt-6">
+          <div className="bg-white rounded-2xl shadow-card p-8 mb-6">
+            <button
+  className="text-blue-800 font-bold text-3xl text-center mb-4 hover:underline focus:outline-none"
+  style={{ display: "block", margin: "0 auto" }}
+  onClick={() => {
+    setSelectedTeam('KI-Team (alle)');
+    setCurrentView('team');
+    setSelectedMember('');
+    setShowCalendar(false);
+  }}
+>
+  KI-Team (alle)
+</button>
+            <div className="flex flex-wrap justify-center mb-6 gap-2">
+              {teams['KI-Team (alle)'].map((m,i) => (
+                <button key={m} onClick={()=>setSelectedMember(m)||setCurrentView('member')} className="text-blue-700 hover:underline text-base font-medium px-3">{m}{i<teams['KI-Team (alle)'].length-1?',':''}</button>
+              ))}
+            </div>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Object.keys(teams).filter(team=>team!=="KI-Team (alle)").map(team=>(
+  <div key={team} className="bg-blue-50 rounded-xl border border-blue-100 shadow-card p-5 hover:shadow-lg transition-shadow">
+    <button onClick={()=>setSelectedTeam(team)||setCurrentView('team')} className="block w-full text-xl font-semibold text-blue-700 hover:underline mb-2">{team}</button>
+    {/* Info-Text direkt unter dem Titel */}
+    {team === "AG-1" && (
+      <div className="text-xs text-blue-700 mb-2 italic text-center">Prompting/KI-Tools/VR/AR (Austausch/Dialog EB)</div>
+    )}
+    {team === "AG-2" && (
+      <div className="text-xs text-blue-700 mb-2 italic text-center">KI-Didaktik/Austausch EB (konkrete Unterrichtssituationen)/KI-Assistenz/Medien- und KI-Kompetenzen</div>
+    )}
+    {team === "AG-3" && (
+      <div className="text-xs text-blue-700 mb-2 italic text-center">Strategische Beziehungen und Vernetzung</div>
+    )}
+    {team === "AG-4" && (
+      <div className="text-xs text-blue-700 mb-2 italic text-center">Beziehung/Dialog Mensch-Maschine, Technologiefolgenabschätzung</div>
+    )}
+    <div className="flex flex-wrap gap-2">
+      {teams[team].map(member=>
+        <button
+  key={member}
+  className="bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-full px-3 py-1 text-xs"
+  onClick={() => {
+    setSelectedMember(member);
+    setCurrentView('member');
+    setSelectedTeam('');
+  }}
+>
+  {member}
+</button>
+      )}
+    </div>
+  </div>
+))}
+            </div>
+          </div>
+             {/* Diskreter Versionshinweis */}
+      <div className="text-right text-xs text-gray-400 mt-2 pr-2">
+        Version {APP_VERSION} – {APP_DATE}
+      </div>
+        </div>
+        
+      )
+    }
+    if(currentView==='team') {
+      return (
+        <div>
+          <div className="bg-white rounded-xl shadow-card p-6 mb-4">
+            <h2 className="font-bold text-xl text-center text-blue-700 mb-2">{selectedTeam}</h2>
+            {selectedTeam === "AG-1" && (
+  <div className="text-xs text-blue-700 mb-2 italic text-center">Prompting/KI-Tools/VR/AR (Austausch/Dialog EB)</div>
+)}
+{selectedTeam === "AG-2" && (
+  <div className="text-xs text-blue-700 mb-2 italic text-center">KI-Didaktik/Austausch EB (konkrete Unterrichtssituationen)/KI-Assistenz/Medien- und KI-Kompetenzen</div>
+)}
+{selectedTeam === "AG-3" && (
+  <div className="text-xs text-blue-700 mb-2 italic text-center">Strategische Beziehungen und Vernetzung</div>
+)}
+{selectedTeam === "AG-4" && (
+  <div className="text-xs text-blue-700 mb-2 italic text-center">Beziehung/Dialog Mensch-Maschine, Technologiefolgenabschätzung</div>
+)}
+            <div className="flex flex-wrap justify-center gap-2 mb-4">
+              {teams[selectedTeam].map(member=>(
+                <button key={member} onClick={()=>setSelectedMember(member)||setCurrentView('member')} className="bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-full px-3 py-1 text-xs">{member}</button>
+              ))}
+            </div>
+            <div className="flex justify-center">
+              <button onClick={()=>setShowCalendar(s=>!s)} className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2">
+                {Emoji.calendar} {showCalendar ? "Kalender ausblenden":"Kalender anzeigen"}
+              </button>
+            </div>
+          </div>
+          {showCalendar && (
+            calendarView==='month'?renderMonthCalendar():
+            calendarView==='week'?renderWeekCalendar():
+            renderYearCalendar()
+          )}
+          <div className="bg-white rounded-xl shadow-card p-6 mt-6">
+            <h3 className="font-semibold mb-3">Team Tasks</h3>
+            <div className="space-y-2">
+              {tasks.filter(task => task.team === selectedTeam && task.status !== "archiviert")
+  .sort((a, b) => (b.deadline || "").localeCompare(a.deadline || ""))
+  .map(task=>(
+    <div key={task.id} className="p-2 border rounded flex justify-between items-center hover:bg-gray-50">
+      <div>
+        <span className="font-medium">{highlightSitzung(task.title)}</span>
+        <span className="text-xs bg-blue-100 text-blue-800 rounded px-2 py-0.5 ml-2">{task.deadline}</span>
+        <span className="text-xs text-gray-400">({task.assignedTo.join(', ')})</span>
+        {task.comment && (
+          <div className="text-xs text-gray-600 mt-1 break-words">
+            {makeLinksClickable(task.comment)}
+          </div>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <span className={statusBadge(task.status)}>{task.status}</span>
+        <button onClick={()=>handleEditTask(task)}>{Emoji.edit}</button>
+        <button onClick={()=>handleDeleteTask(task.id)}>{Emoji.trash}</button>
+      </div>
+    </div>
+  ))}
+            </div>
+          </div>
+        </div>
+      )
+    }
+    
+if (currentView === 'archive') {
+  // Nach Team gruppieren; innerhalb jedes Teams: Deadline absteigend
+  const grouped = {};
+  tasks.forEach(t => {
+    if (t.status !== "archiviert") return;
+    const key = t.team || "(ohne Team)";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(t);
+  });
+  const teamNames = Object.keys(grouped).sort();
+  teamNames.forEach(team => {
+    grouped[team].sort((a, b) =>
+      String(b.deadline ?? "").localeCompare(String(a.deadline ?? ""))
+    );
+  });
+
+  return (
+    <div className="max-w-4xl mx-auto mt-8">
+      <div className="bg-white rounded-2xl shadow-card p-8 mb-6">
+        <h2 className="text-blue-800 font-bold text-2xl text-center mb-6">
+          {Emoji.archive} Archivierte Tasks - Sitzungen - Dokumente (nach Team)
+        </h2>
+
+        {teamNames.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">Keine archivierten Tasks vorhanden.</div>
+        ) : teamNames.map(team => (
+          <div key={team} className="mb-8">
+            <h3 className="text-blue-700 font-semibold text-xl mb-3 text-center">{team}</h3>
+
+            <table className="w-full table-auto text-sm">
+              <thead>
+                <tr className="bg-blue-50 text-blue-800">
+                  <th className="px-3 py-2 text-left">Titel</th>
+                  <th className="px-3 py-2 text-left">Deadline</th>
+                  <th className="px-3 py-2 text-left">Mitglieder</th>
+                  <th className="px-3 py-2 text-left">Beschreibung</th>
+                  <th className="px-3 py-2 text-left">Protokoll/Kommentar</th> {/* NEU */}
+                </tr>
+              </thead>
+              <tbody>
+                {grouped[team].map(task => (
+                  <tr key={task.id} className="border-b align-top">
+                    <td className="px-3 py-2 font-medium">
+                      <button
+                        className="text-blue-700 hover:underline"
+                        onClick={() => handleTaskClick(task)}
+                        style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer" }}
+                      >
+                        {highlightSitzung(task.title)}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">{task.deadline}</td>
+                    <td className="px-3 py-2">{(task.assignedTo || []).join(', ')}</td>
+                    <td className="px-3 py-2">{task.description || ""}</td>
+                    <td className="px-3 py-2">
+                      {task.comment ? makeLinksClickable(task.comment) : ""} {/* NEU */}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+    if(currentView==='member') {
+      const memberTeams = getMemberTeams(selectedMember);
+      const memberTasks = getMemberOpenTasks(selectedMember)
+  .sort((a, b) => (b.deadline || "").localeCompare(a.deadline || ""));
+      return (
+        <div>
+          <div className="bg-white rounded-xl shadow-card p-6 mb-4">
+            <h2 className="font-bold text-xl text-blue-700 text-center mb-2">{selectedMember}</h2>
+            <div className="mb-3 flex flex-wrap gap-2 justify-center">
+              {memberTeams.map(team=>(
+                <button key={team} onClick={()=>setSelectedTeam(team)||setCurrentView('team')} className="bg-blue-100 text-blue-800 rounded-full px-3 py-1 text-xs hover:bg-blue-200">{team}</button>
+              ))}
+            </div>
+            <div className="flex justify-center">
+              <button onClick={()=>setShowCalendar(s=>!s)} className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2">
+                {Emoji.calendar} {showCalendar ? "Kalender ausblenden":"Kalender anzeigen"}
+              </button>
+            </div>
+          </div>
+          {showCalendar && (
+            calendarView==='month'?renderMonthCalendar():
+            calendarView==='week'?renderWeekCalendar():
+            renderYearCalendar()
+          )}
+          <div className="bg-white rounded-xl shadow-card p-6 mt-6">
+            <h3 className="font-semibold mb-3">Aufgaben ({memberTasks.length})</h3>
+            <div className="space-y-2">
+              {memberTasks.map(task=>(
+                <div key={task.id} className="p-2 border rounded flex justify-between items-center hover:bg-gray-50">
+                  <div>
+                    <span className="font-medium">{highlightSitzung(task.title)}</span>
+                    <span className="text-xs text-gray-400 ml-2">{task.team}</span>
+                    <span className="text-xs bg-blue-100 text-blue-800 rounded px-2 py-0.5 ml-2">{task.deadline}</span>
+
+                    {task.comment && (
+  <div className="text-xs text-gray-600 mt-1 break-words">
+    {makeLinksClickable(task.comment)}
+  </div>
+)}
+                  </div>
+                  <div className="flex gap-2">
+                    <span className={statusBadge(task.status)}>{task.status}</span>
+                    <button onClick={()=>handleEditTask(task)}>{Emoji.edit}</button>
+                    <button onClick={()=>handleDeleteTask(task.id)}>{Emoji.trash}</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+if (currentView === 'meetings') {
+  return renderMeetingsGrouped();
+}
+if(currentView==='dokumente') {
+  return renderDokumente();
+}
+    return null;
+  }
+
+  // =================== HEADER/NAV =====================
+function renderNav() {
+  // States für Dropdowns am Anfang der Komponente (außerhalb dieser Funktion!):
+  // const [showTeamsDropdown, setShowTeamsDropdown] = React.useState(false);
+  // const [showMembersDropdown, setShowMembersDropdown] = React.useState(false);
+  // Die beiden useEffects zum Outside-Click stehen ebenfalls ganz oben (siehe vorherige Antwort).
+
+  return (
+    <nav className="bg-white shadow-card sticky top-0 z-40">
+      <div className="max-w-5xl mx-auto flex flex-wrap justify-between items-center py-3 px-2">
+        <div className="flex gap-2 items-center">
+          {/* Hauptseite Button */}
+          <button
+            onClick={() => {
+              setCurrentView('main');
+              setSelectedTeam('');
+              setSelectedMember('');
+              setShowCalendar(false);
+            }}
+            className="px-3 py-1 rounded hover:bg-blue-200 text-blue-700 font-semibold"
+          >
+            Hauptseite
+          </button>
+          {/* Teams Dropdown */}
+          <div id="teams-dropdown" className="relative">
+            <button
+              onClick={() => setShowTeamsDropdown(v => !v)}
+              className="px-3 py-1 rounded hover:bg-blue-200 text-blue-700 font-semibold flex items-center gap-1"
+            >
+              {Emoji.users} Teams ▼
+            </button>
+            {showTeamsDropdown && (
+              <div className="absolute left-0 mt-2 bg-white text-blue-700 rounded shadow-card z-30 p-2 min-w-[10rem]">
+                {Object.keys(teams).map(team => (
+                  <button
+                    key={team}
+                    className="block px-3 py-1 rounded hover:bg-blue-100 w-full text-left"
+                    onClick={() => {
+                      setSelectedTeam(team);
+                      setCurrentView('team');
+                      setShowTeamsDropdown(false);
+                    }}
+                  >
+                    {team}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Mitglieder Dropdown */}
+          <div id="members-dropdown" className="relative">
+            <button
+              onClick={() => setShowMembersDropdown(v => !v)}
+              className="px-3 py-1 rounded hover:bg-blue-200 text-blue-700 font-semibold flex items-center gap-1"
+            >
+              {Emoji.user} Mitglieder ▼
+            </button>
+            {showMembersDropdown && (
+              <div className="absolute left-0 mt-2 bg-white text-blue-700 rounded shadow-card z-30 p-2 min-w-[10rem]">
+                {allMembers.map(member => (
+                  <button
+                    key={member}
+                    className="block px-3 py-1 rounded hover:bg-blue-100 w-full text-left"
+                    onClick={() => {
+                      setSelectedMember(member);
+                      setCurrentView('member');
+                      setShowMembersDropdown(false);
+                    }}
+                  >
+                    {member}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-2 items-center">
+          <button
+  onClick={() => { if (ensureEditor()) setShowTaskForm(true); }}
+  className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-white flex items-center gap-1"
+>
+  {Emoji.plus} Neue Task
+</button>
+          <button
+  onClick={() => {
+    setCurrentView('archive');
+    setSelectedTeam('');
+    setSelectedMember('');
+    setShowCalendar(false);
+  }}
+  className="bg-gray-500 text-white px-3 py-1 rounded flex items-center gap-1"
+  title="Archivierte Tasks"
+>
+  {Emoji.archive} Archiv
+</button>
+<button
+  onClick={() => {
+    setCurrentView('meetings');
+    setSelectedTeam('');
+    setSelectedMember('');
+    setShowCalendar(false);
+  }}
+  className="bg-yellow-200 text-yellow-900 px-3 py-1 rounded flex items-center gap-1"
+  title="Sitzungen"
+>
+  <span>&#9749;</span> Sitzungen
+</button>
+<button
+  onClick={() => {
+    setCurrentView('dokumente');
+    setSelectedTeam('');
+    setSelectedMember('');
+    setShowCalendar(false);
+  }}
+  className="bg-green-200 text-green-900 px-3 py-1 rounded flex items-center gap-1"
+  title="Dokumente"
+>
+  📎 Dokumente
+</button>
+<button
+  onClick={() => {
+    setCurrentView('log');
+    setSelectedTeam('');
+    setSelectedMember('');
+    setShowCalendar(false);
+  }}
+  className="bg-blue-200 text-blue-900 px-3 py-1 rounded flex items-center gap-1"
+  title="Änderungs-Log"
+>
+  📝 Log
+</button>
+          <button
+  onClick={() => setShowExportModal(true)}
+  className="bg-blue-500 text-white px-3 py-1 rounded"
+>
+  📥 Exportieren
+</button>
+          
+          <span className="bg-blue-100 text-blue-800 font-semibold px-3 py-1 rounded ml-2">
+            <a href="https://dlh.zh.ch" target="_blank">DLH Sek II</a>
+          </span>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+  // =================== MODAL =====================
+  function renderTaskForm() {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-card relative">
+          <button onClick={resetTaskForm} className="absolute right-2 top-2 text-2xl text-gray-400 hover:text-gray-700">×</button>
+          <h2 className="font-bold text-lg mb-4">{editingTask ? "Task bearbeiten" : "Neue Task erstellen"}</h2>
+          <label className="block mb-1 text-sm">Titel *</label>
+          <input className="mb-2 border rounded w-full p-2" value={taskForm.title} onChange={e=>setTaskForm({...taskForm, title:e.target.value})} />
+          <label className="block mb-1 text-sm">Beschreibung</label>
+          <textarea className="mb-2 border rounded w-full p-2" rows="2" value={taskForm.description} onChange={e=>setTaskForm({...taskForm, description:e.target.value})}/>
+          <label className="block mb-1 text-sm">Kommentare und Links zur Task</label>
+<textarea
+  className="mb-2 border rounded w-full p-2"
+  rows="2"
+  value={taskForm.comment}
+  onChange={e=>setTaskForm({...taskForm, comment: e.target.value})}
+/>
+          <label className="block mb-1 text-sm">Team *</label>
+          <select className="mb-2 border rounded w-full p-2" value={taskForm.team} onChange={e=>setTaskForm({...taskForm, team:e.target.value})}>
+            <option value="">Team wählen</option>
+            {Object.keys(teams).map(team => <option key={team} value={team}>{team}</option>)}
+          </select>
+          <label className="block mb-1 text-sm">Zuständige Mitglieder</label>
+          <div className="grid grid-cols-2 gap-1 mb-2">
+            {allMembers.map(member => (
+              <label key={member} className="flex items-center text-sm gap-1">
+                <input type="checkbox" checked={taskForm.assignedTo.includes(member)} onChange={e=>handleAssigneeChange(member,e.target.checked)} />
+                {member}
+              </label>
+            ))}
+          </div>
+          <label className="block mb-1 text-sm">Deadline *</label>
+          <input className="mb-2 border rounded w-full p-2" type="date" value={taskForm.deadline} onChange={e=>setTaskForm({...taskForm, deadline:e.target.value})}/>
+          <label className="block mb-1 text-sm">Status</label>
+          <select className="mb-4 border rounded w-full p-2" value={taskForm.status} onChange={e=>setTaskForm({...taskForm, status:e.target.value})}>
+            {statuses.map(status => <option key={status} value={status}>{status}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <button className="flex-1 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleTaskSubmit}>{editingTask?"Aktualisieren":"Erstellen"}</button>
+            <button className="flex-1 py-2 bg-gray-400 text-white rounded hover:bg-gray-600" onClick={resetTaskForm}>Abbrechen</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+// --- HIER: NEUE Renderfunktion ---
+function renderExportModal() {
+  function handleMemberToggle(member) {
+    setExportMembers(members =>
+      members.includes(member)
+        ? members.filter(m => m !== member)
+        : [...members, member]
+    );
+  }
+  function selectAllMembers() {
+    setExportMembers([...allMembers]);
+  }
+
+  // Klassifizierung „Sitzungen“ / „Dokumente“ / „Übrige“
+  function classifyTask(task) {
+    const isSitzung = !!(task?.title && /sitzung/i.test(task.title));
+    const hasLink = (str) =>
+      typeof str === 'string' &&
+      (/(https?:\/\/[^\s)]+)/i.test(str) || /\[[^\]]+\]\(https?:\/\/[^\s)]+\)/i.test(str));
+    const isDok = hasLink(task?.description) || hasLink(task?.comment);
+    return { sitzung: isSitzung, dokument: !isSitzung && isDok, other: !isSitzung && !isDok };
+  }
+
+function exportFilteredTasksAsCSV() {
+  // ---- Kopfzeile (fix)
+  const header = [
+    "Title",
+    "Description",
+    "Deadline",
+    "completionValue",
+    "Team",
+    "AssignedTo",
+    "LinkName",
+    "Link"
+  ];
+
+  // ---- Status → completionValue (Planner)
+  const statusToValue = { "zu tun": 0, "in Arbeit": 50, "erledigt": 100 };
+
+  // ---- Datum formatieren (yyyy-mm-dd → yyyy-mm-ddT00:00:00Z)
+  const formatDeadline = (d) => d ? `${d}T00:00:00Z` : "";
+
+  // ---- Team-Filter (ALL = kein Filter)
+  const teamOk = (t) => exportTeam === 'ALL' ? true : (t === exportTeam);
+
+  // ---- Ab-Datum-Filter (inkl.)
+  const sinceTime = exportDateFrom ? new Date(`${exportDateFrom}T00:00:00Z`).getTime() : null;
+  const deadlineOk = (d) => !sinceTime ? true : (new Date(`${d}T00:00:00Z`).getTime() >= sinceTime);
+
+  // ---- Mitglieder-Filter: leere Auswahl = alle
+  const hasSelectedMember = (arr) =>
+    Array.isArray(arr) && (exportMembers.length === 0 ? arr.length > 0 : arr.some(m => exportMembers.includes(m)));
+
+  // ---- Robuste Link-Extraktion (Markdown + Plaintext; Zeilenumbruch zwischen ] und ( erlaubt)
+  function extractLinks(text) {
+    if (!text || typeof text !== "string") return [];
+    let src = text;
+
+    // [Text] \n (URL) → [Text](URL)
+    src = src.replace(/\]\s*[\r\n]+\s*\(\s*/g, "](");
+
+    const found = [];
+
+    // 1) Markdown [Text](URL)
+    const md = /\[([^\]]+)\]\s*\(\s*(https?:\/\/\S+?)\s*\)/gim;
+    src = src.replace(md, (_, name, url) => { found.push({ name, url }); return " "; });
+
+    // 2) Sonderfall: "[Text]\nURL" (ohne Klammern)
+    const mdTwoLine = /\[([^\]]+)\]\s*[\r\n]+\s*(https?:\/\/\S+)/gim;
+    src = src.replace(mdTwoLine, (_, name, url) => { found.push({ name, url }); return " "; });
+
+    // 3) Plaintext-URLs im Rest
+    const urlRe = /\bhttps?:\/\/\S+/gim;
+    let u;
+    while ((u = urlRe.exec(src)) !== null) {
+      const url = u[0];
+      found.push({ name: url, url });
+    }
+
+    // Deduplizieren nach URL
+    const seen = new Set();
+    return found.filter(({ url }) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+  }
+
+  // ---- Prüfer: Hat Task irgendwo (Titel/Beschreibung/Kommentar) Links?
+  const hasAnyLink = (t) =>
+    extractLinks(t?.title || "").length > 0 ||
+    extractLinks(t?.description || "").length > 0 ||
+    extractLinks(t?.comment || "").length > 0;
+
+  // ---- Typen-Logik:
+  // Sitzungen = Titel enthält "Sitzung"
+  // Dokumente = hat mindestens einen Link (egal wo)
+  // Übrige   = alles, was KEINE Sitzung ist (egal ob mit/ohne Link)
+  const kindOk = (task) => {
+    const isSitzung = !!(task?.title && /sitzung/i.test(task.title));
+    const hasLink   = hasAnyLink(task);
+
+    let ok = false;
+    if (exportKinds?.sitzungen && isSitzung) ok = true;
+    if (exportKinds?.dokumente && hasLink) ok = true;
+    if (exportKinds?.other && !isSitzung) ok = true;
+    return ok;
+  };
+
+  // ---- 1) Filtern (keine archivierten) + Entdoppelung, falls mehrere Typen angehakt
+  const seenIds = new Set();
+  const filtered = tasks.filter(t => {
+    if (t.status === "archiviert") return false;
+    if (!teamOk(t.team)) return false;
+    if (exportDateFrom && (!t.deadline || !deadlineOk(t.deadline))) return false;
+    if (!hasSelectedMember(t.assignedTo)) return false;
+    if (!kindOk(t)) return false;
+    if (seenIds.has(t.id)) return false;
+    seenIds.add(t.id);
+    return true;
+  });
+
+  // ---- 2) Je Mitglied / je Link eine Zeile
+  const rows = [];
+  filtered.forEach(task => {
+    const members = Array.isArray(task.assignedTo) ? task.assignedTo : [];
+    const memberList = exportMembers.length === 0 ? members : members.filter(m => exportMembers.includes(m));
+
+    // Alle Links aus Titel + Beschreibung + Kommentar sammeln
+    const linksTitle = extractLinks(task.title || "");
+    const linksDesc  = extractLinks(task.description || "");
+    const linksComm  = extractLinks(task.comment || "");
+    const links      = [...linksTitle, ...linksDesc, ...linksComm];
+
+    memberList.forEach(member => {
+      if (links.length === 0) {
+        // Zeile ohne Link-Spalten
+        rows.push([
+          `"${(task.title ?? "").replace(/"/g,'""')}"`,
+          `"${(task.description ?? "").replace(/"/g,'""')}"`,
+          `"${formatDeadline(task.deadline)}"`,
+          statusToValue[task.status] ?? "",
+          `"${(task.team ?? "").replace(/"/g,'""')}"`,
+          `"${memberToEmail[member] || member}"`,
+          `""`,
+          `""`
+        ]);
+      } else {
+        // Für jeden Link eine Zeile
+        links.forEach(link => {
+          rows.push([
+            `"${(task.title ?? "").replace(/"/g,'""')}"`,
+            `"${(task.description ?? "").replace(/"/g,'""')}"`,
+            `"${formatDeadline(task.deadline)}"`,
+            statusToValue[task.status] ?? "",
+            `"${(task.team ?? "").replace(/"/g,'""')}"`,
+            `"${memberToEmail[member] || member}"`,
+            `"${(link.name ?? "").replace(/"/g,'""')}"`,
+            `"${(link.url  ?? "").replace(/"/g,'""')}"`
+          ]);
+        });
+      }
+    });
+  });
+
+  if (rows.length === 0) {
+    alert("Keine passenden Tasks zum Exportieren gefunden!");
+    setShowExportModal(false);
+    return;
+  }
+
+  // ---- 3) CSV erzeugen + BOM (für Umlaute in Excel)
+  const csv = [header.join(","), ...rows.map(r => r.join(","))].join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+
+  // ---- 4) Download
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "tasks-ki-team.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  setShowExportModal(false);
+}
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl p-6 w-full max-w-xl shadow-card relative">
+        <button
+          onClick={() => setShowExportModal(false)}
+          className="absolute right-2 top-2 text-2xl text-gray-400 hover:text-gray-700"
+        >×</button>
+
+        <h2 className="font-bold text-2xl mb-4">Tasks exportieren</h2>
+
+        {/* Filterleiste */}
+        <div className="grid md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <div className="font-semibold mb-1">Ab Datum (inkl.)</div>
+            <input
+              type="date"
+              value={exportDateFrom}
+              onChange={e => setExportDateFrom(e.target.value)}
+              className="border rounded px-2 py-1 w-full"
+            />
+            <div className="text-xs text-slate-500 mt-1">Nur Tasks mit Deadline ab diesem Datum</div>
+          </div>
+
+          <div>
+            <div className="font-semibold mb-1">Team filtern</div>
+            <select
+              value={exportTeam}
+              onChange={e => setExportTeam(e.target.value)}
+              className="border rounded px-2 py-1 w-full"
+            >
+              <option value="ALL">Alle Teams</option>
+              {Object.keys(teams).map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Typ-Filter */}
+        <div className="mb-3">
+          <div className="font-semibold mb-1">Typ filtern</div>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={exportKinds.sitzungen}
+                onChange={e => setExportKinds(prev => ({...prev, sitzungen: e.target.checked}))}
+              />
+              Sitzungen
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={exportKinds.dokumente}
+                onChange={e => setExportKinds(prev => ({...prev, dokumente: e.target.checked}))}
+              />
+              Dokumente
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={exportKinds.other}
+                onChange={e => setExportKinds(prev => ({...prev, other: e.target.checked}))}
+              />
+              Übrige Tasks
+            </label>
+          </div>
+          <div className="text-xs text-slate-500 mt-1">
+            „Sitzungen“ = Titel enthält „Sitzung“. „Dokumente“ = Beschreibung/Kommentar enthält Link. Sonst „Übrige“.
+          </div>
+        </div>
+
+        {/* Mitglieder-Filter */}
+        <div className="mb-2">
+          <div className="font-semibold mb-1">Mitglieder filtern</div>
+          <div className="grid grid-cols-2 gap-1 mb-1">
+            {allMembers.map(member => (
+              <label key={member} className="flex items-center text-sm gap-2">
+                <input
+                  type="checkbox"
+                  checked={exportMembers.includes(member)}
+                  onChange={() => handleMemberToggle(member)}
+                />
+                {member}
+              </label>
+            ))}
+          </div>
+          <button onClick={selectAllMembers} className="text-xs text-blue-700 underline">Alle auswählen</button>
+          <div className="text-xs text-slate-500 mt-1">Keine Auswahl = alle Mitglieder</div>
+        </div>
+
+        <button
+          onClick={exportFilteredTasksAsCSV}
+          className="mt-4 py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 w-full"
+        >
+          Export als CSV
+        </button>
+      </div>
+    </div>
+  );
+}
+
+  // =================== HEADER =====================
+  function renderSyncBar() {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-green-100 border border-green-300 text-green-800 px-4 py-3 rounded mt-4 mb-6 flex items-center gap-2">
+          <span className="text-2xl">✅</span>
+          <span>
+            <b>Tasks automatisch gespeichert</b><br/>
+            {tasks.length} Aufgaben werden zentral gespeichert. Zuletzt synchronisiert: {lastSync ? lastSync.toLocaleTimeString('de-CH') : 'n/a'}
+          </span>
+        </div>
+      </div>
+    );
+  }
+function renderDokumente() {
+  // 1. Filter: Titel beginnt mit "Dokument" (Groß/Kleinschreibung egal)
+  const dokumentTasks = tasks.filter(
+    task => /^dokument/i.test(task.title)
+  );
+
+  // 2. Teams-Liste
+  const teamsList = Object.keys(teams);
+
+  return (
+    <div className="max-w-4xl mx-auto mt-8">
+      <div className="bg-white rounded-2xl shadow-card p-8 mb-6">
+        <h2 className="text-green-900 font-bold text-2xl text-center mb-4">
+          📎 Dokumente-Ablage
+        </h2>
+        {teamsList.map(teamName => {
+          // Filter + Sort: Neueste zuerst!
+          const teamDocs = dokumentTasks
+            .filter(t => t.team === teamName)
+            .sort((a, b) => (b.deadline || "").localeCompare(a.deadline || ""));
+
+          if (!teamDocs.length) return null;
+          return (
+            <div key={teamName} className="mb-6">
+              <h3 className="font-semibold text-green-800 text-lg mb-2">{teamName}</h3>
+              <table className="w-full table-auto text-sm mb-2">
+                <thead>
+  <tr className="bg-green-50 text-green-800">
+    <th className="px-3 py-2 text-left">Titel</th>
+    <th className="px-3 py-2 text-left">Datum</th>
+    <th className="px-3 py-2 text-left">Mitglieder</th>
+    <th className="px-3 py-2 text-left w-56">Link</th>
+    <th className="px-3 py-2 text-left">Beschreibung</th>
+  </tr>
+</thead>
+                <tbody>
+                  {teamDocs.map(task => (
+                    <tr
+                      key={task.id}
+                      className="border-b hover:bg-green-50 cursor-pointer"
+                      onClick={() => handleTaskClick(task)}
+                    >
+                      <td className="px-3 py-2 font-medium">{task.title}</td>
+                      <td className="px-3 py-2">{task.deadline}</td>
+                      <td className="px-3 py-2">{(task.assignedTo || []).join(', ')}</td>
+                      <td className="px-3 py-2 w-56">{makeLinksClickable(task.comment)}</td>
+                      <td className="px-3 py-2">{makeLinksClickable(task.description)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+function renderMeetingsGrouped() {
+  // 1) Sitzungen sammeln: Titel enthält „Sitzung“, archivierte ausblenden
+  const meetingsAll = tasks.filter(t =>
+    t.status !== "archiviert" &&
+    typeof t.title === "string" &&
+    /sitzung/i.test(t.title)
+  );
+
+  // 2) Nach Team gruppieren
+  const grouped = {};
+  meetingsAll.forEach(t => {
+    const key = t.team || "KI-Team (alle)";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(t);
+  });
+
+  // 3) Teams alphabetisch, innerhalb: Deadline absteigend
+  const teamNames = Object.keys(grouped).sort();
+  teamNames.forEach(team => {
+    grouped[team].sort((a, b) =>
+      String(b.deadline ?? "").localeCompare(String(a.deadline ?? ""))
+    );
+  });
+
+  return (
+    <div className="max-w-4xl mx-auto mt-8">
+      <div className="bg-white rounded-2xl shadow-card p-8 mb-6">
+        <h2 className="text-blue-800 font-bold text-2xl text-center mb-6">
+          🟨 Aktuelle Sitzungen &ndash; k&uuml;rzlich oder in Zukunft
+        </h2>
+
+        {teamNames.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            Keine Sitzungen vorhanden.
+          </div>
+        ) : teamNames.map(team => (
+          <div key={team} className="mb-8">
+            <h3 className="text-blue-700 font-semibold text-xl mb-3">{team}</h3>
+
+            <table className="w-full table-auto text-sm">
+              <thead>
+                <tr className="bg-blue-50 text-blue-800">
+                  <th className="px-3 py-2 text-left">Titel</th>
+                  <th className="px-3 py-2 text-left">Datum</th>
+                  <th className="px-3 py-2 text-left">Mitglieder</th>
+                  <th className="px-3 py-2 text-left">Beschreibung</th>
+                  <th className="px-3 py-2 text-left">Protokoll/Kommentar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grouped[team].map(task => (
+                  <tr key={task.id} className="border-b align-top">
+                    {/* Titel (klickbar) */}
+                    <td className="px-3 py-2 font-medium">
+                      <button
+                        className="text-blue-700 hover:underline"
+                        onClick={() => handleTaskClick(task)}
+                        style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer" }}
+                      >
+                        {highlightSitzung(task.title)}
+                      </button>
+                    </td>
+
+                    {/* Datum */}
+                    <td className="px-3 py-2 whitespace-nowrap">{task.deadline || ""}</td>
+
+                    {/* Mitglieder */}
+                    <td className="px-3 py-2">{(task.assignedTo || []).join(', ')}</td>
+
+                    {/* Beschreibung (Plaintext) */}
+                    <td className="px-3 py-2">{task.description || ""}</td>
+
+                    {/* Protokoll/Kommentar – klickbare Links + Text */}
+                    <td className="px-3 py-2">
+                      {task.comment ? makeLinksClickable(task.comment) : ""}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+  // =================== HAUPT-RENDER =====================
+  return (
+    <div className="min-h-screen bg-slate-100">
+      {renderNav()}
+      {renderSyncBar()}
+      <main>
+        {renderMainContent()}
+      </main>
+      {showTaskForm && renderTaskForm()}
+      
+{showExportModal && renderExportModal()}
+    </div>
+  );
+}
+
+// Mount
+ReactDOM.render(<ProjectManagementTool />, document.getElementById('root'));
+  </script>
+</body>
+</html>
