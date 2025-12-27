@@ -69,14 +69,30 @@ const allMembers = [...new Set(Object.values(teams).flat())];
     const statuses = ['zu tun', 'in Arbeit', 'erledigt', 'archiviert'];
 
 // Prüft einmal pro Browser-Session (sessionStorage)
-function ensureEditor() {
-  if (sessionStorage.getItem("isEditor") === "1") return true;
+async function ensureEditor() {
+  if (sessionStorage.getItem("isEditor") === "1" && sessionStorage.getItem("editorToken")) return true;
+
   const pw = window.prompt("Passwort für Änderungen eingeben:");
-  if (pw && pw === EDIT_PASSWORD) {
-    sessionStorage.setItem("isEditor", "1");
-    return true;
-  }
+  if (!pw) return false;
+
+  try {
+    const res = await fetch(AUTH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw })
+    });
+    if (!res.ok) throw new Error("auth failed");
+    const data = await res.json();
+    if (data && data.ok && data.token) {
+      sessionStorage.setItem("isEditor", "1");
+      sessionStorage.setItem("editorToken", data.token);
+      return true;
+    }
+  } catch (e) {}
+
   alert("Falsches Passwort. Änderungen sind nicht erlaubt.");
+  sessionStorage.removeItem("isEditor");
+  sessionStorage.removeItem("editorToken");
   return false;
 }
     const statusBadge = status =>
@@ -282,9 +298,7 @@ const isNewLogEntry = React.useCallback((entry) => {
 // Cloud-Load (nur EINMAL, beim Laden)
 React.useEffect(() => {
   setLoading(true);
-  fetch(API_URL, {
-    headers: { 'X-Master-Key': API_KEY }
-  })
+  fetch(LOAD_URL)
     .then(res => res.ok ? res.json() : Promise.reject('Fehler beim Laden'))
     .then(data => {
       if (data.record && data.record.tasks && data.record.log) {
@@ -313,14 +327,17 @@ React.useEffect(() => {
     return;
   }
   if (!loading) {
-    fetch(API_URL, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': API_KEY
-      },
-      body: JSON.stringify({ tasks, log })
-    })
+    const token = sessionStorage.getItem("editorToken");
+
+fetch(SAVE_URL, {...})
+  .then(res => {
+    if (res.ok) setLastSync(new Date());
+    if (res.status === 401) {
+      sessionStorage.removeItem("isEditor");
+      sessionStorage.removeItem("editorToken");
+    }
+    return res;
+  });
     .then(res => {
       if (res.ok) setLastSync(new Date());
     });
@@ -345,30 +362,28 @@ const isActiveTask = (task) => task.status !== "archiviert";
   const [taskForm, setTaskForm] = React.useState({
     title: '', description: '', comment: '', team: '', assignedTo: [], deadline: '', status: 'zu tun'
   });
-  const handleTaskClick = (task) => {
-  if (!ensureEditor()) return;
+const handleTaskClick = async (task) => {
+  if (!(await ensureEditor())) return;
   setEditingTask(task);
   setTaskForm(task);
   setShowTaskForm(true);
 };
-const handleEditTask = (task) => {
-  if (!ensureEditor()) return;
+const handleEditTask = async (task) => {
+  if (!(await ensureEditor())) return;
   setEditingTask(task);
   setTaskForm(task);
   setShowTaskForm(true);
 };
-  const handleDeleteTask = (id) => {
-  if (!ensureEditor()) return;
+  const handleDeleteTask = async (id) => {
+  if (!(await ensureEditor())) return;
   setTasks(tasks.filter(t => t.id !== id));
   setShowTaskForm(false);
   const deletedTask = tasks.find(t => t.id === id);
   if (deletedTask) addLogEntry("deleted", deletedTask);
 };
   const resetTaskForm = () => { setTaskForm({title: '', description: '', comment: '', team: '', assignedTo: [], deadline: '', status: 'zu tun'}); setEditingTask(null); setShowTaskForm(false);}
- const handleTaskSubmit = () => {
-  if (sessionStorage.getItem("isEditor") !== "1") {
-    alert("Bitte Passwort eingeben, um Änderungen zu speichern.");
-    return;
+ const handleTaskSubmit = async (e) => {
+  if (!(await ensureEditor())) return;
   }
     if (editingTask) {
       setTasks(tasks.map(t => t.id === editingTask.id ? {...taskForm, id: editingTask.id} : t));
@@ -552,8 +567,8 @@ addLogEntry("edited", taskForm, oldTask);
     );
   }
 // Export Log als PDF (landscape, AutoTable, schmale Aktion/Team/Task, Wrap bei Mitglieder/Details)
-function handleExportPDF() {
-  if (!ensureEditor()) return; // gleiches Passwort wie beim Task-Dialog
+async function handleExportPDF() {
+  if (!(await ensureEditor())) return; // gleiches Passwort wie beim Task-Dialog
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
@@ -1112,7 +1127,7 @@ function renderNav() {
         </div>
         <div className="flex gap-2 items-center">
           <button
-  onClick={() => { if (ensureEditor()) setShowTaskForm(true); }}
+  onClick={async () => { if (await ensureEditor()) setShowTaskForm(true); }}
   className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-white flex items-center gap-1"
 >
   {Emoji.plus} Neue Task
