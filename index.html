@@ -329,23 +329,23 @@ React.useEffect(() => {
   if (!loading) {
     const token = sessionStorage.getItem("editorToken");
 
-fetch(SAVE_URL, {
-  method: "PUT",
-  headers: {
-    "Content-Type": "application/json",
-    "X-Editor-Token": token || ""
-  },
-  body: JSON.stringify({ tasks, log })
-})
-.then(res => {
-  if (res.ok) setLastSync(new Date());
-  if (res.status === 401) {
-    sessionStorage.removeItem("isEditor");
-    sessionStorage.removeItem("editorToken");
+    fetch(SAVE_URL, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Editor-Token": token || ""
+      },
+      body: JSON.stringify({ tasks, log })
+    })
+      .then(res => {
+        if (res.ok) setLastSync(new Date());
+        if (res.status === 401) {
+          sessionStorage.removeItem("isEditor");
+          sessionStorage.removeItem("editorToken");
+        }
+      })
+      .catch(() => {});
   }
-  return res;
-})
-.catch(() => {});
 }, [tasks]);
   // Helper für Teams/Members/Tasks
   const getMemberTeams = (member) => Object.keys(teams).filter(team => teams[team].includes(member));
