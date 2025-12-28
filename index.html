@@ -387,18 +387,20 @@ const handleEditTask = async (task) => {
 };
   const resetTaskForm = () => { setTaskForm({title: '', description: '', comment: '', team: '', assignedTo: [], deadline: '', status: 'zu tun'}); setEditingTask(null); setShowTaskForm(false);}
  const handleTaskSubmit = async (e) => {
+  e.preventDefault();
   if (!(await ensureEditor())) return;
+
+  if (editingTask) {
+    setTasks(tasks.map(t => t.id === editingTask.id ? { ...taskForm, id: editingTask.id } : t));
+    const oldTask = tasks.find(t => t.id === editingTask.id);
+    addLogEntry("edited", taskForm, oldTask);
+  } else {
+    const newId = Date.now();
+    setTasks([...tasks, { ...taskForm, id: newId }]);
+    addLogEntry("created", { ...taskForm, id: newId });
   }
-    if (editingTask) {
-      setTasks(tasks.map(t => t.id === editingTask.id ? {...taskForm, id: editingTask.id} : t));
-      const oldTask = tasks.find(t => t.id === editingTask.id);
-addLogEntry("edited", taskForm, oldTask);
-    } else {
-      setTasks([...tasks, {...taskForm, id: Date.now()}]);
-      addLogEntry("created", { ...taskForm, id: Date.now() });
-    }
-    resetTaskForm();
-  };
+  resetTaskForm();
+};
   const handleAssigneeChange = (member, checked) => {
     setTaskForm({
       ...taskForm,
