@@ -95,27 +95,28 @@ async function ensureEditor() {
   const pw = window.prompt("Passwort für Änderungen eingeben:");
   if (!pw) return false;
 
+  // ask/store identity BEFORE auth request (so we can send it)
+  const { name, email } = getEditorIdentity();
+  sessionStorage.setItem("editorName", name || "");
+  sessionStorage.setItem("editorEmail", email || "");
+
   try {
     const res = await fetch(AUTH_URL, {
       method: "POST",
       headers: {
-  "Content-Type": "application/json",
-  "X-Editor-Token": token || "",
-  "X-Editor-Name": sessionStorage.getItem("editorName") || "",
-  "X-Editor-Email": sessionStorage.getItem("editorEmail") || ""
-},
+        "Content-Type": "application/json",
+        "X-Editor-Name": name || "",
+        "X-Editor-Email": email || ""
+      },
       body: JSON.stringify({ password: pw })
     });
+
     if (!res.ok) throw new Error("auth failed");
+
     const data = await res.json();
     if (data && data.ok && data.token) {
       sessionStorage.setItem("isEditor", "1");
       sessionStorage.setItem("editorToken", data.token);
-
-      const { name, email } = getEditorIdentity();
-      sessionStorage.setItem("editorName", name || "");
-      sessionStorage.setItem("editorEmail", email || "");
-
       return true;
     }
   } catch (e) {}
