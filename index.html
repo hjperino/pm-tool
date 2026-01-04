@@ -98,7 +98,12 @@ async function ensureEditor() {
   try {
     const res = await fetch(AUTH_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+  "Content-Type": "application/json",
+  "X-Editor-Token": token || "",
+  "X-Editor-Name": sessionStorage.getItem("editorName") || "",
+  "X-Editor-Email": sessionStorage.getItem("editorEmail") || ""
+},
       body: JSON.stringify({ password: pw })
     });
     if (!res.ok) throw new Error("auth failed");
