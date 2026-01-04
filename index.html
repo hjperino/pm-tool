@@ -69,6 +69,26 @@ const allMembers = [...new Set(Object.values(teams).flat())];
     const statuses = ['zu tun', 'in Arbeit', 'erledigt', 'archiviert'];
 
 // Prüft einmal pro Browser-Session (sessionStorage)
+function getEditorIdentity() {
+  let name = localStorage.getItem("editorName") || "";
+  let email = localStorage.getItem("editorEmail") || "";
+
+  if (!name) {
+    name = window.prompt("Dein Name (für Änderungsprotokoll & E-Mails):") || "";
+    name = name.trim();
+    if (name) localStorage.setItem("editorName", name);
+  }
+
+  // optional, aber empfehlenswert
+  if (!email) {
+    email = window.prompt("Deine E-Mail (optional, für Rückfragen):") || "";
+    email = email.trim();
+    if (email) localStorage.setItem("editorEmail", email);
+  }
+
+  return { name, email };
+}
+  
 async function ensureEditor() {
   if (sessionStorage.getItem("isEditor") === "1" && sessionStorage.getItem("editorToken")) return true;
 
@@ -86,6 +106,11 @@ async function ensureEditor() {
     if (data && data.ok && data.token) {
       sessionStorage.setItem("isEditor", "1");
       sessionStorage.setItem("editorToken", data.token);
+
+      const { name, email } = getEditorIdentity();
+      sessionStorage.setItem("editorName", name || "");
+      sessionStorage.setItem("editorEmail", email || "");
+
       return true;
     }
   } catch (e) {}
