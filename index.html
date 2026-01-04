@@ -364,7 +364,9 @@ React.useEffect(() => {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        "X-Editor-Token": token || ""
+        "X-Editor-Token": token || "",
+        "X-Editor-Name": sessionStorage.getItem("editorName") || "",
+        "X-Editor-Email": sessionStorage.getItem("editorEmail") || ""
       },
       body: JSON.stringify({ tasks, log })
     })
